@@ -1,4 +1,4 @@
-# 🪄 Magico — Convertisseur d'icônes
+# 🪄 Magico — Convertisseur d'icônes  [![GitHub release](https://img.shields.io/github/v/release/Z1t0on/Magico)](https://github.com/Z1t0on/Magico/releases/latest)
 
 Magico est un outil Python avec interface graphique (GUI) qui détoure automatiquement vos images (PNG, JPG, WEBP) grâce à une IA locale et les transforme en fichiers `.ico` transparents pour Windows.
 
