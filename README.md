@@ -17,8 +17,9 @@ Magico est un outil Python avec interface graphique (GUI) qui détoure automatiq
 
 Si tu utilises l'exécutable portable :
 
-1. Télécharge **`Magico.exe`** depuis la section Releases.
-2. Double-clique sur **`Magico.exe`** pour lancer l'application.
+1. Télécharge **`Magico.zip`** depuis la section Releases.
+2. Clic droit sur **`Magico.zip`**, extraire tout.
+3. Double-clique sur **`Magico.exe`** dans le dossier créé pour lancer l'application.
 
 ---
 
