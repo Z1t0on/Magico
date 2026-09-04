@@ -24,7 +24,6 @@ except Exception:
 import threading
 import customtkinter as ctk
 from PIL import Image
-from rembg import new_session, remove
 
 # Configuration du thème
 ctk.set_appearance_mode("dark")
@@ -45,14 +44,12 @@ class MagicoApp(ctk.CTk):
         super().__init__()
 
         self.title("Magico — Convertisseur d'icônes")
-        self.geometry("480x280")
-        self.resizable(False, False)
+        self.geometry("480x380")
 
         # Ajout de l'icône de l'application
-        try:
-            self.iconbitmap(os.path.join(BASE_DIR, "app.ico"))
-        except Exception:
-            pass
+        icon_path = os.path.join(BASE_DIR, "app.ico")
+        if os.path.exists(icon_path):
+            self.iconbitmap(icon_path)
 
         self.session = None
 
@@ -91,6 +88,8 @@ class MagicoApp(ctk.CTk):
     def charger_modele(self):
         if not self.session:
             self.status.configure(text="Chargement du modèle IA...")
+            self.update()
+            from rembg import new_session
             self.session = new_session("u2net")
 
     def lancer_traitement_thread(self):
@@ -118,7 +117,7 @@ class MagicoApp(ctk.CTk):
 
         self.charger_modele()
 
-# Récupère le vrai dossier du .exe
+        # Récupère le vrai dossier du .exe
         if getattr(sys, 'frozen', False):
             dossier_exe = os.path.dirname(sys.executable)
         else:
@@ -140,6 +139,7 @@ class MagicoApp(ctk.CTk):
             try:
                 with Image.open(src) as img:
                     img_rgba = img.convert("RGBA")
+                    from rembg import remove
                     img_detouree = remove(img_rgba, session=self.session)
 
                     side = max(img_detouree.size)
