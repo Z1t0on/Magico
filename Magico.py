@@ -1,5 +1,26 @@
 import os
 import sys
+import ctypes
+import importlib.metadata
+
+# Patch pour les métadonnées manquantes dans l'exécutable
+_original_version = importlib.metadata.version
+
+def _patched_version(package_name):
+    try:
+        return _original_version(package_name)
+    except importlib.metadata.PackageNotFoundError:
+        return "0.0.0"
+
+importlib.metadata.version = _patched_version
+
+# Force l'icône dans la barre des tâches sous Windows
+try:
+    myappid = "vibe.coding.magico.1.0"
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+except Exception:
+    pass
+
 import threading
 import customtkinter as ctk
 from PIL import Image
@@ -12,8 +33,11 @@ ctk.set_default_color_theme("blue")
 EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 ICON_SIZES = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
 
-# Obtenir le dossier racine de l'application
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Obtenir le dossier racine (compatible mode .py et mode .exe PyInstaller)
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class MagicoApp(ctk.CTk):
@@ -46,7 +70,7 @@ class MagicoApp(ctk.CTk):
         )
         self.subtitle_label.pack(pady=(0, 20))
 
-       # Bouton principal
+        # Bouton principal
         self.btn_lancer = ctk.CTkButton(
             self,
             text="Sélectionner un dossier",
@@ -94,8 +118,14 @@ class MagicoApp(ctk.CTk):
 
         self.charger_modele()
 
-        # Le dossier de sortie se crée maintenant à la racine du projet Magico
-        dossier_sortie = os.path.join(BASE_DIR, "icones_finales")
+# Récupère le vrai dossier du .exe
+        if getattr(sys, 'frozen', False):
+            dossier_exe = os.path.dirname(sys.executable)
+        else:
+            dossier_exe = os.path.dirname(os.path.abspath(__file__))
+
+        # Dossier de sortie à côté de Magico.exe
+        dossier_sortie = os.path.join(dossier_exe, "Icones_Générées")
         os.makedirs(dossier_sortie, exist_ok=True)
 
         succes = 0
@@ -127,7 +157,7 @@ class MagicoApp(ctk.CTk):
                 print(f"Erreur sur {f}: {e}")
 
         self.status.configure(
-            text=f"Terminé ! {succes} icône(s) générée(s).",
+            text=f"Terminé ! {succes} icône(s) dans 'Icones_Générées'.",
             text_color="#22c55e",
         )
         self.btn_lancer.configure(state="normal")
