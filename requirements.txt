@@ -1,0 +1,7 @@
+### 2. `requirements.txt`
+À placer à la racine pour simplifier l'installation des dépendances.
+
+```text
+customtkinter>=5.2.0
+Pillow>=10.0.0
+rembg>=2.0.50
