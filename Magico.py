@@ -138,13 +138,21 @@ class MagicoApp(ctk.CTk):
             self.status.configure(text="Chargement du modèle IA...")
             self.update()
             self.start_loading()
-            from rembg import new_session
-            if self.session is not None:
-                del self.session
-            self.session = new_session(modele_souhaite)
-            self.current_modele = modele_souhaite
-            self.stop_loading()
-            self.status.configure(text="Prêt")
+            try:
+                from rembg import new_session
+                if self.session is not None:
+                    del self.session
+                self.session = new_session(modele_souhaite)
+                self.current_modele = modele_souhaite
+                self.stop_loading()
+                self.status.configure(text="Prêt")
+                return True
+            except Exception as e:
+                self.stop_loading()
+                self.status.configure(text=f"Erreur : {str(e)}", text_color="#ef4444")
+                self.current_modele = None
+                return False
+        return True
 
     def lancer_traitement_thread(self):
         dossier_source = ctk.filedialog.askdirectory(
@@ -169,7 +177,9 @@ class MagicoApp(ctk.CTk):
             self.btn_lancer.configure(state="normal")
             return
 
-        self.charger_modele()
+        if not self.charger_modele():
+            self.btn_lancer.configure(state="normal")
+            return
 
         # Récupère le vrai dossier du .exe
         if getattr(sys, 'frozen', False):
