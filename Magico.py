@@ -164,6 +164,7 @@ class MagicoApp(ctk.CTk):
         os.makedirs(dossier_sortie, exist_ok=True)
 
         succes = 0
+        echecs = 0
         for i, f in enumerate(fichiers, 1):
             self.status.configure(
                 text=f"Traitement : {i}/{len(fichiers)} — {f}"
@@ -190,12 +191,18 @@ class MagicoApp(ctk.CTk):
                     carre.save(dest, format="ICO", sizes=ICON_SIZES)
                     succes += 1
             except Exception as e:
-                print(f"Erreur sur {f}: {e}")
+                echecs += 1
 
-        self.status.configure(
-            text=f"Terminé ! {succes} icône(s) dans 'Icones_Générées'.",
-            text_color="#22c55e",
-        )
+        if echecs > 0:
+            self.status.configure(
+                text=f"Terminé ! {succes} icône(s) générée(s), {echecs} échec(s).",
+                text_color="#f59e0b",
+            )
+        else:
+            self.status.configure(
+                text=f"Terminé ! {succes} icône(s) dans 'Icones_Générées'.",
+                text_color="#22c55e",
+            )
         self.btn_lancer.configure(state="normal")
 
 
