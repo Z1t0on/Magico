@@ -152,6 +152,7 @@ class MagicoApp(ctk.CTk):
             return
 
         self.btn_lancer.configure(state="disabled")
+        self.charger_modele()
         threading.Thread(
             target=self.traiter_dossier, args=(dossier_source,), daemon=True
         ).start()
