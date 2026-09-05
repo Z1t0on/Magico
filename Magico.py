@@ -52,6 +52,7 @@ class MagicoApp(ctk.CTk):
             self.iconbitmap(icon_path)
 
         self.session = None
+        self.current_modele = None
 
         # Titre & Sous-titre
         self.title_label = ctk.CTkLabel(
@@ -116,13 +117,14 @@ class MagicoApp(ctk.CTk):
         self.progress.set(0)
 
     def charger_modele(self):
-        if not self.session:
+        modele_souhaite = self.modele_var.get()
+        if self.session is None or self.current_modele != modele_souhaite:
             self.status.configure(text="Chargement du modèle IA...")
             self.update()
             self.start_loading()
             from rembg import new_session
-            modele = self.modele_var.get()
-            self.session = new_session(modele)
+            self.session = new_session(modele_souhaite)
+            self.current_modele = modele_souhaite
             self.stop_loading()
             self.status.configure(text="Prêt")
 
