@@ -101,7 +101,23 @@ class MagicoApp(ctk.CTk):
             font=ctk.CTkFont(size=12),
             width=200,
         )
-        self.modele_menu.pack(pady=(0, 15))
+        self.modele_menu.pack(pady=(0, 5))
+
+        # Menu déroulant pour choisir le format de sortie
+        self.format_label = ctk.CTkLabel(
+            self, text="Format de sortie :", font=ctk.CTkFont(size=12)
+        )
+        self.format_label.pack(pady=(0, 0))
+
+        self.format_var = ctk.StringVar(value="ICO")
+        self.format_menu = ctk.CTkOptionMenu(
+            self,
+            variable=self.format_var,
+            values=["ICO", "PNG"],
+            font=ctk.CTkFont(size=12),
+            width=200,
+        )
+        self.format_menu.pack(pady=(0, 15))
 
         # Statut
         self.status = ctk.CTkLabel(
@@ -160,7 +176,8 @@ class MagicoApp(ctk.CTk):
             dossier_exe = os.path.dirname(os.path.abspath(__file__))
 
         # Dossier de sortie à côté de Magico.exe
-        dossier_sortie = os.path.join(dossier_exe, "Icones_Générées")
+        format_sortie = self.format_var.get().lower()
+        dossier_sortie = os.path.join(dossier_exe, f"Images_{format_sortie}")
         os.makedirs(dossier_sortie, exist_ok=True)
 
         succes = 0
@@ -171,7 +188,11 @@ class MagicoApp(ctk.CTk):
             )
 
             src = os.path.join(dossier_source, f)
-            dest = os.path.join(dossier_sortie, f"{os.path.splitext(f)[0]}.ico")
+            nom_sans_ext = os.path.splitext(f)[0]
+            if format_sortie == "ico":
+                dest = os.path.join(dossier_sortie, f"{nom_sans_ext}.ico")
+            else:
+                dest = os.path.join(dossier_sortie, f"{nom_sans_ext}.{format_sortie}")
 
             try:
                 with Image.open(src) as img:
@@ -179,28 +200,31 @@ class MagicoApp(ctk.CTk):
                     from rembg import remove
                     img_detouree = remove(img_rgba, session=self.session)
 
-                    side = max(img_detouree.size)
-                    carre = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-                    carre.paste(
-                        img_detouree,
-                        (
-                            (side - img_detouree.width) // 2,
-                            (side - img_detouree.height) // 2,
-                        ),
-                    )
-                    carre.save(dest, format="ICO", sizes=ICON_SIZES)
+                    if format_sortie == "ico":
+                        side = max(img_detouree.size)
+                        carre = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+                        carre.paste(
+                            img_detouree,
+                            (
+                                (side - img_detouree.width) // 2,
+                                (side - img_detouree.height) // 2,
+                            ),
+                        )
+                        carre.save(dest, format="ICO", sizes=ICON_SIZES)
+                    else:
+                        img_detouree.save(dest, format=format_sortie.upper())
                     succes += 1
             except Exception as e:
                 echecs += 1
 
         if echecs > 0:
             self.status.configure(
-                text=f"Terminé ! {succes} icône(s) générée(s), {echecs} échec(s).",
+                text=f"Terminé ! {succes} image(s) générée(s), {echecs} échec(s).",
                 text_color="#f59e0b",
             )
         else:
             self.status.configure(
-                text=f"Terminé ! {succes} icône(s) dans 'Icones_Générées'.",
+                text=f"Terminé ! {succes} image(s) dans 'Images_{format_sortie}'.",
                 text_color="#22c55e",
             )
         self.btn_lancer.configure(state="normal")
