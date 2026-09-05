@@ -52,6 +52,7 @@ class MagicoApp(ctk.CTk):
             self.iconbitmap(icon_path)
 
         self.session = None
+        self.animating = False
 
         # Titre & Sous-titre
         self.title_label = ctk.CTkLabel(
@@ -101,13 +102,38 @@ class MagicoApp(ctk.CTk):
         )
         self.status.pack(pady=(15, 0))
 
+    def animate_title(self):
+        if not self.animating:
+            return
+        current_text = self.title_label.cget("text")
+        if current_text == "Magico":
+            new_text = "Magico."
+        elif current_text == "Magico.":
+            new_text = "Magico.."
+        elif current_text == "Magico..":
+            new_text = "Magico..."
+        else:
+            new_text = "Magico"
+        self.title_label.configure(text=new_text)
+        self.after(300, self.animate_title)
+
+    def stop_animation(self):
+        self.animating = False
+        self.title_label.configure(text="Magico")
+
+    def start_animation(self):
+        self.animating = True
+        self.animate_title()
+
     def charger_modele(self):
         if not self.session:
             self.status.configure(text="Chargement du modèle IA...")
             self.update()
+            self.start_animation()
             from rembg import new_session
             modele = self.modele_var.get()
             self.session = new_session(modele)
+            self.stop_animation()
 
     def lancer_traitement_thread(self):
         dossier_source = ctk.filedialog.askdirectory(
