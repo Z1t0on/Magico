@@ -79,6 +79,22 @@ class MagicoApp(ctk.CTk):
         )
         self.btn_lancer.pack(pady=10)
 
+        # Menu déroulant pour choisir le modèle IA
+        self.modele_label = ctk.CTkLabel(
+            self, text="Modèle IA :", font=ctk.CTkFont(size=12)
+        )
+        self.modele_label.pack(pady=(10, 0))
+
+        self.modele_var = ctk.StringVar(value="u2net")
+        self.modele_menu = ctk.CTkOptionMenu(
+            self,
+            variable=self.modele_var,
+            values=["u2net", "u2netp", "isnet-general-use"],
+            font=ctk.CTkFont(size=12),
+            width=200,
+        )
+        self.modele_menu.pack(pady=(0, 15))
+
         # Statut
         self.status = ctk.CTkLabel(
             self, text="Prêt", text_color="gray50", font=ctk.CTkFont(size=12)
@@ -90,7 +106,8 @@ class MagicoApp(ctk.CTk):
             self.status.configure(text="Chargement du modèle IA...")
             self.update()
             from rembg import new_session
-            self.session = new_session("u2net")
+            modele = self.modele_var.get()
+            self.session = new_session(modele)
 
     def lancer_traitement_thread(self):
         dossier_source = ctk.filedialog.askdirectory(
