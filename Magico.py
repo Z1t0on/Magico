@@ -52,22 +52,19 @@ class MagicoApp(ctk.CTk):
             self.iconbitmap(icon_path)
 
         self.session = None
-        self.animating = False
-        self.animation_index = 0
 
         # Titre & Sous-titre
-        self.title_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.title_frame.pack(pady=(25, 5))
+        self.title_label = ctk.CTkLabel(
+            self, text="Magico", font=ctk.CTkFont(size=24, weight="bold")
+        )
+        self.title_label.pack(pady=(25, 5))
 
-        self.letter_labels = []
-        for char in "Magico":
-            label = ctk.CTkLabel(
-                self.title_frame,
-                text=char,
-                font=ctk.CTkFont(size=24, weight="bold")
-            )
-            label.pack(side="left", padx=2)
-            self.letter_labels.append(label)
+        # Barre de chargement
+        self.progress = ctk.CTkProgressBar(
+            self, width=200, height=4, mode="indeterminate"
+        )
+        self.progress.pack(pady=(5, 10))
+        self.progress.set(0)
 
         self.subtitle_label = ctk.CTkLabel(
             self,
@@ -111,43 +108,23 @@ class MagicoApp(ctk.CTk):
         )
         self.status.pack(pady=(15, 0))
 
-    def animate_title(self):
-        if not self.animating:
-            return
-        for i, label in enumerate(self.letter_labels):
-            offset = (self.animation_index + i * 2) % 10
-            if offset < 5:
-                y_offset = offset
-            else:
-                y_offset = 10 - offset
-            label.configure(text=label.cget("text"))
-            label.place_forget()
-            label.place(x=i * 30, y=-y_offset)
-        self.animation_index += 1
-        self.after(100, self.animate_title)
+    def start_loading(self):
+        self.progress.start()
 
-    def stop_animation(self):
-        self.animating = False
-        for i, label in enumerate(self.letter_labels):
-            label.place_forget()
-            label.pack(side="left", padx=2)
-
-    def start_animation(self):
-        self.animating = True
-        self.animation_index = 0
-        for label in self.letter_labels:
-            label.pack_forget()
-        self.animate_title()
+    def stop_loading(self):
+        self.progress.stop()
+        self.progress.set(0)
 
     def charger_modele(self):
         if not self.session:
             self.status.configure(text="Chargement du modèle IA...")
             self.update()
-            self.start_animation()
+            self.start_loading()
             from rembg import new_session
             modele = self.modele_var.get()
             self.session = new_session(modele)
-            self.stop_animation()
+            self.stop_loading()
+            self.status.configure(text="Prêt")
 
     def lancer_traitement_thread(self):
         dossier_source = ctk.filedialog.askdirectory(
