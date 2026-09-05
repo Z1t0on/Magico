@@ -139,6 +139,8 @@ class MagicoApp(ctk.CTk):
             self.update()
             self.start_loading()
             from rembg import new_session
+            if self.session is not None:
+                del self.session
             self.session = new_session(modele_souhaite)
             self.current_modele = modele_souhaite
             self.stop_loading()
@@ -152,7 +154,6 @@ class MagicoApp(ctk.CTk):
             return
 
         self.btn_lancer.configure(state="disabled")
-        self.charger_modele()
         threading.Thread(
             target=self.traiter_dossier, args=(dossier_source,), daemon=True
         ).start()
