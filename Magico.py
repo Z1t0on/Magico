@@ -227,6 +227,11 @@ class MagicoApp(ctk.CTk):
                 text=f"Terminé ! {succes} image(s) dans 'Images_{format_sortie}'.",
                 text_color="#22c55e",
             )
+        try:
+            import winsound
+            winsound.Beep(1000, 300)
+        except:
+            pass
         self.btn_lancer.configure(state="normal")
 
 
