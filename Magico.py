@@ -63,6 +63,7 @@ class MagicoApp(ctk.CTk):
 
         self.session = None
         self.current_modele = None
+        self.dossier_destination = None
         self.ui_queue = queue.Queue()
 
         # Titre & Sous-titre
@@ -80,7 +81,7 @@ class MagicoApp(ctk.CTk):
 
         self.subtitle_label = ctk.CTkLabel(
             self,
-            text="Transforme tes images en .ico transparents",
+            text="Transforme tes images en fichiers transparents",
             font=ctk.CTkFont(size=13),
             text_color="gray70",
         )
@@ -124,11 +125,31 @@ class MagicoApp(ctk.CTk):
         self.format_menu = ctk.CTkOptionMenu(
             self,
             variable=self.format_var,
-            values=["ICO", "PNG"],
+            values=["ICO", "PNG", "WEBP"],
             font=ctk.CTkFont(size=12),
             width=200,
         )
-        self.format_menu.pack(pady=(0, 15))
+        self.format_menu.pack(pady=(0, 8))
+
+        # Sélection du dossier de destination facultatif
+        self.btn_destination = ctk.CTkButton(
+            self,
+            text="Choisir le dossier de sortie",
+            font=ctk.CTkFont(size=12),
+            height=32,
+            width=220,
+            command=self.choisir_destination,
+        )
+        self.btn_destination.pack(pady=(0, 4))
+
+        self.destination_status = ctk.CTkLabel(
+            self,
+            text="Destination : dossier parent de chaque image",
+            text_color="gray50",
+            font=ctk.CTkFont(size=11),
+            wraplength=430,
+        )
+        self.destination_status.pack(pady=(0, 8))
 
         # Statut
         self.status = ctk.CTkLabel(
@@ -143,6 +164,16 @@ class MagicoApp(ctk.CTk):
     def stop_loading(self):
         self.progress.stop()
         self.progress.set(0)
+
+    def choisir_destination(self):
+        dossier = filedialog.askdirectory(
+            title="Choisir le dossier de sortie"
+        )
+        if not dossier:
+            return
+
+        self.dossier_destination = dossier
+        self.destination_status.configure(text=f"Destination : {dossier}")
 
     def _publier_evenement_ui(self, evenement, **donnees):
         """Publie des données pour la boucle UI sans toucher à ses widgets."""
@@ -215,17 +246,35 @@ class MagicoApp(ctk.CTk):
         logger.info("%d fichier(s) ajouté(s) à la file d'attente.", len(fichiers))
         modele_souhaite = self.modele_var.get()
         format_sortie = self.format_var.get().lower()
+        dossier_destination = self.dossier_destination
+        logger.info(
+            "Export sélectionné : format=%s ; destination=%s.",
+            format_sortie.upper(),
+            dossier_destination or "dossier parent de chaque image",
+        )
         self.btn_lancer.configure(state="disabled")
         threading.Thread(
             target=self._executer_traitement,
-            args=(fichiers, modele_souhaite, format_sortie),
+            args=(
+                fichiers,
+                modele_souhaite,
+                format_sortie,
+                dossier_destination,
+            ),
             daemon=True,
         ).start()
 
-    def _executer_traitement(self, fichiers, modele_souhaite, format_sortie):
+    def _executer_traitement(
+        self, fichiers, modele_souhaite, format_sortie, dossier_destination
+    ):
         """Point d'entrée protégé du worker : aucune opération IHM directe."""
         try:
-            self.traiter_fichiers(fichiers, modele_souhaite, format_sortie)
+            self.traiter_fichiers(
+                fichiers,
+                modele_souhaite,
+                format_sortie,
+                dossier_destination,
+            )
         except Exception:
             logger.exception("Erreur non gérée dans le worker de traitement.")
             self._publier_evenement_ui(
@@ -236,12 +285,11 @@ class MagicoApp(ctk.CTk):
         finally:
             self._publier_evenement_ui("bouton", etat="normal")
 
-    def traiter_fichiers(self, fichiers, modele_souhaite, format_sortie):
+    def traiter_fichiers(
+        self, fichiers, modele_souhaite, format_sortie, dossier_destination
+    ):
         if not fichiers or not self.charger_modele(modele_souhaite):
             return
-
-        # Les fichiers .ico sont créés dans le dossier du premier fichier sélectionné.
-        dossier_sortie = os.path.dirname(fichiers[0])
 
         succes = 0
         echecs = 0
@@ -252,30 +300,49 @@ class MagicoApp(ctk.CTk):
             )
 
             nom_sans_ext = os.path.splitext(os.path.basename(src))[0]
-            if format_sortie == "ico":
-                dest = os.path.join(dossier_sortie, f"{nom_sans_ext}.ico")
-            else:
-                dest = os.path.join(dossier_sortie, f"{nom_sans_ext}.{format_sortie}")
+            dossier_sortie = dossier_destination or os.path.dirname(src)
+            dest = os.path.join(
+                dossier_sortie, f"{nom_sans_ext}.{format_sortie}"
+            )
 
             try:
+                os.makedirs(dossier_sortie, exist_ok=True)
                 with Image.open(src) as img:
                     img_rgba = img.convert("RGBA")
-                    from rembg import remove
-                    img_detouree = remove(img_rgba, session=self.session)
-
-                    if format_sortie == "ico":
-                        side = max(img_detouree.size)
-                        carre = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-                        carre.paste(
-                            img_detouree,
-                            (
-                                (side - img_detouree.width) // 2,
-                                (side - img_detouree.height) // 2,
-                            ),
-                        )
-                        carre.save(dest, format="ICO", sizes=ICON_SIZES)
-                    else:
-                        img_detouree.save(dest, format=format_sortie.upper())
+                    try:
+                        from rembg import remove
+                        img_detouree = remove(img_rgba, session=self.session)
+                        try:
+                            image_export = img_detouree.convert("RGBA")
+                            try:
+                                if format_sortie == "ico":
+                                    side = max(image_export.size)
+                                    carre = Image.new(
+                                        "RGBA", (side, side), (0, 0, 0, 0)
+                                    )
+                                    try:
+                                        carre.paste(
+                                            image_export,
+                                            (
+                                                (side - image_export.width) // 2,
+                                                (side - image_export.height) // 2,
+                                            ),
+                                        )
+                                        carre.save(
+                                            dest, format="ICO", sizes=ICON_SIZES
+                                        )
+                                    finally:
+                                        carre.close()
+                                else:
+                                    image_export.save(
+                                        dest, format=format_sortie.upper()
+                                    )
+                            finally:
+                                image_export.close()
+                        finally:
+                            img_detouree.close()
+                    finally:
+                        img_rgba.close()
                     succes += 1
             except Exception:
                 logger.exception("Échec du traitement de l'image %s.", src)
@@ -290,7 +357,10 @@ class MagicoApp(ctk.CTk):
         else:
             self._publier_evenement_ui(
                 "statut",
-                texte=f"Terminé ! {succes} image(s) dans '{dossier_sortie}'.",
+                texte=(
+                    f"Terminé ! {succes} image(s) dans "
+                    f"'{dossier_destination or 'le dossier parent de chaque image'}'."
+                ),
                 couleur="#22c55e",
             )
         try:
