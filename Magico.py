@@ -1,8 +1,10 @@
 import os
 import sys
 import ctypes
+import gc
 import importlib.metadata
 import logging
+import queue
 
 # Patch pour les métadonnées manquantes dans l'exécutable
 _original_version = importlib.metadata.version
@@ -61,6 +63,7 @@ class MagicoApp(ctk.CTk):
 
         self.session = None
         self.current_modele = None
+        self.ui_queue = queue.Queue()
 
         # Titre & Sous-titre
         self.title_label = ctk.CTkLabel(
@@ -132,6 +135,7 @@ class MagicoApp(ctk.CTk):
             self, text="Prêt", text_color="gray50", font=ctk.CTkFont(size=12)
         )
         self.status.pack(pady=(15, 0))
+        self.after(50, self._traiter_messages_ui)
 
     def start_loading(self):
         self.progress.start()
@@ -140,25 +144,60 @@ class MagicoApp(ctk.CTk):
         self.progress.stop()
         self.progress.set(0)
 
-    def charger_modele(self):
-        modele_souhaite = self.modele_var.get()
+    def _publier_evenement_ui(self, evenement, **donnees):
+        """Publie des données pour la boucle UI sans toucher à ses widgets."""
+        self.ui_queue.put((evenement, donnees))
+
+    def _traiter_messages_ui(self):
+        """Applique les événements du worker exclusivement dans le thread UI."""
+        try:
+            while True:
+                evenement, donnees = self.ui_queue.get_nowait()
+                if evenement == "chargement_modele":
+                    self.status.configure(
+                        text="Chargement du modèle IA...", text_color="gray50"
+                    )
+                    self.start_loading()
+                elif evenement == "modele_pret":
+                    self.stop_loading()
+                    self.status.configure(text="Prêt", text_color="gray50")
+                elif evenement == "statut":
+                    self.status.configure(
+                        text=donnees["texte"],
+                        text_color=donnees.get("couleur", "gray50"),
+                    )
+                elif evenement == "arret_chargement":
+                    self.stop_loading()
+                elif evenement == "bouton":
+                    self.btn_lancer.configure(state=donnees["etat"])
+        except queue.Empty:
+            pass
+        except Exception:
+            logger.exception("Erreur lors de la mise à jour de l'IHM.")
+        finally:
+            self.after(50, self._traiter_messages_ui)
+
+    def charger_modele(self, modele_souhaite):
         if self.session is None or self.current_modele != modele_souhaite:
-            self.status.configure(text="Chargement du modèle IA...")
-            self.update()
-            self.start_loading()
+            self._publier_evenement_ui("chargement_modele")
             try:
                 from rembg import new_session
                 if self.session is not None:
                     del self.session
+                    self.session = None
+                    gc.collect()
                 self.session = new_session(modele_souhaite)
                 self.current_modele = modele_souhaite
-                self.stop_loading()
-                self.status.configure(text="Prêt")
+                self._publier_evenement_ui("modele_pret")
                 return True
             except Exception as e:
                 logger.exception("Impossible de charger le modèle %s.", modele_souhaite)
-                self.stop_loading()
-                self.status.configure(text=f"Erreur : {str(e)}", text_color="#ef4444")
+                self._publier_evenement_ui("arret_chargement")
+                self._publier_evenement_ui(
+                    "statut",
+                    texte=f"Erreur : {str(e)}",
+                    couleur="#ef4444",
+                )
                 self.current_modele = None
                 return False
         return True
@@ -174,28 +213,42 @@ class MagicoApp(ctk.CTk):
             return
 
         logger.info("%d fichier(s) ajouté(s) à la file d'attente.", len(fichiers))
+        modele_souhaite = self.modele_var.get()
+        format_sortie = self.format_var.get().lower()
         self.btn_lancer.configure(state="disabled")
         threading.Thread(
-            target=self.traiter_fichiers, args=(fichiers,), daemon=True
+            target=self._executer_traitement,
+            args=(fichiers, modele_souhaite, format_sortie),
+            daemon=True,
         ).start()
 
-    def traiter_fichiers(self, fichiers):
-        if not fichiers:
-            return
+    def _executer_traitement(self, fichiers, modele_souhaite, format_sortie):
+        """Point d'entrée protégé du worker : aucune opération IHM directe."""
+        try:
+            self.traiter_fichiers(fichiers, modele_souhaite, format_sortie)
+        except Exception:
+            logger.exception("Erreur non gérée dans le worker de traitement.")
+            self._publier_evenement_ui(
+                "statut",
+                texte="Erreur inattendue pendant le traitement.",
+                couleur="#ef4444",
+            )
+        finally:
+            self._publier_evenement_ui("bouton", etat="normal")
 
-        if not self.charger_modele():
-            self.btn_lancer.configure(state="normal")
+    def traiter_fichiers(self, fichiers, modele_souhaite, format_sortie):
+        if not fichiers or not self.charger_modele(modele_souhaite):
             return
 
         # Les fichiers .ico sont créés dans le dossier du premier fichier sélectionné.
         dossier_sortie = os.path.dirname(fichiers[0])
-        format_sortie = self.format_var.get().lower()
 
         succes = 0
         echecs = 0
         for i, src in enumerate(fichiers, 1):
-            self.status.configure(
-                text=f"Traitement : {i}/{len(fichiers)} — {os.path.basename(src)}"
+            self._publier_evenement_ui(
+                "statut",
+                texte=f"Traitement : {i}/{len(fichiers)} — {os.path.basename(src)}",
             )
 
             nom_sans_ext = os.path.splitext(os.path.basename(src))[0]
@@ -224,26 +277,27 @@ class MagicoApp(ctk.CTk):
                     else:
                         img_detouree.save(dest, format=format_sortie.upper())
                     succes += 1
-            except Exception as e:
+            except Exception:
                 logger.exception("Échec du traitement de l'image %s.", src)
                 echecs += 1
 
         if echecs > 0:
-            self.status.configure(
-                text=f"Terminé ! {succes} image(s) générée(s), {echecs} échec(s).",
-                text_color="#f59e0b",
+            self._publier_evenement_ui(
+                "statut",
+                texte=f"Terminé ! {succes} image(s) générée(s), {echecs} échec(s).",
+                couleur="#f59e0b",
             )
         else:
-            self.status.configure(
-                text=f"Terminé ! {succes} image(s) dans 'Images_{format_sortie}'.",
-                text_color="#22c55e",
+            self._publier_evenement_ui(
+                "statut",
+                texte=f"Terminé ! {succes} image(s) dans '{dossier_sortie}'.",
+                couleur="#22c55e",
             )
         try:
             import winsound
             winsound.Beep(1000, 300)
-        except:
-            pass
-        self.btn_lancer.configure(state="normal")
+        except Exception:
+            logger.debug("Notification sonore indisponible.", exc_info=True)
 
 
 if __name__ == "__main__":
