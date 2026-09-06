@@ -34,6 +34,10 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 ICON_SIZES = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
+MOTEURS_DETOURAGE = {
+    "Haute Précision (IS-Net)": "isnet-general-use",
+    "Rapide (U2Net)": "u2netp",
+}
 
 # Obtenir le dossier racine (compatible mode .py et mode .exe PyInstaller)
 if getattr(sys, 'frozen', False):
@@ -99,17 +103,17 @@ class MagicoApp(ctk.CTk):
         )
         self.btn_lancer.pack(pady=10)
 
-        # Menu déroulant pour choisir le modèle IA
+        # Menu déroulant pour choisir le moteur de détourage
         self.modele_label = ctk.CTkLabel(
-            self, text="Modèle IA :", font=ctk.CTkFont(size=12)
+            self, text="Moteur de détourage :", font=ctk.CTkFont(size=12)
         )
         self.modele_label.pack(pady=(10, 0))
 
-        self.modele_var = ctk.StringVar(value="u2net")
+        self.modele_var = ctk.StringVar(value="Haute Précision (IS-Net)")
         self.modele_menu = ctk.CTkOptionMenu(
             self,
             variable=self.modele_var,
-            values=["u2net", "u2netp", "isnet-general-use"],
+            values=list(MOTEURS_DETOURAGE),
             font=ctk.CTkFont(size=12),
             width=200,
         )
@@ -214,9 +218,7 @@ class MagicoApp(ctk.CTk):
             try:
                 from rembg import new_session
                 if self.session is not None:
-                    del self.session
-                    self.session = None
-                    gc.collect()
+                    self._detruire_session()
                 self.session = new_session(modele_souhaite)
                 self.current_modele = modele_souhaite
                 self._publier_evenement_ui("modele_pret")
@@ -233,6 +235,17 @@ class MagicoApp(ctk.CTk):
                 return False
         return True
 
+    def _detruire_session(self):
+        """Libère explicitement la session ONNX/RemBG et sa mémoire."""
+        session = self.session
+        self.session = None
+        self.current_modele = None
+        try:
+            if session is not None:
+                del session
+        finally:
+            gc.collect()
+
     def lancer_traitement_thread(self):
         fichiers = filedialog.askopenfilenames(
             title="Sélectionner une ou plusieurs images",
@@ -244,11 +257,15 @@ class MagicoApp(ctk.CTk):
             return
 
         logger.info("%d fichier(s) ajouté(s) à la file d'attente.", len(fichiers))
-        modele_souhaite = self.modele_var.get()
+        moteur_selectionne = self.modele_var.get()
+        modele_souhaite = MOTEURS_DETOURAGE[moteur_selectionne]
         format_sortie = self.format_var.get().lower()
         dossier_destination = self.dossier_destination
         logger.info(
-            "Export sélectionné : format=%s ; destination=%s.",
+            "Traitement sélectionné : moteur=%s ; identifiant=%s ; format=%s ; "
+            "destination=%s.",
+            moteur_selectionne,
+            modele_souhaite,
             format_sortie.upper(),
             dossier_destination or "dossier parent de chaque image",
         )
@@ -283,6 +300,10 @@ class MagicoApp(ctk.CTk):
                 couleur="#ef4444",
             )
         finally:
+            try:
+                self._detruire_session()
+            except Exception:
+                logger.exception("Erreur lors de la libération de la session RemBG.")
             self._publier_evenement_ui("bouton", etat="normal")
 
     def traiter_fichiers(
