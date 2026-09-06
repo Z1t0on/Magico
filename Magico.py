@@ -27,13 +27,12 @@ except Exception:
 import threading
 import customtkinter as ctk
 from tkinter import filedialog
-from PIL import Image, ImageChops
+from image_processor import ImageProcessor
 
 # Configuration du thème
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-ICON_SIZES = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
 MOTEURS_DETOURAGE = {
     "Haute Précision (IS-Net)": "isnet-general-use",
     "Rapide (U2Net)": "u2netp",
@@ -342,62 +341,15 @@ class MagicoApp(ctk.CTk):
                 texte=f"Traitement : {i}/{len(fichiers)} — {os.path.basename(src)}",
             )
 
-            nom_sans_ext = os.path.splitext(os.path.basename(src))[0]
-            dossier_sortie = dossier_destination or os.path.dirname(src)
-            dest = os.path.join(
-                dossier_sortie, f"{nom_sans_ext}.{format_sortie}"
-            )
-
             try:
-                os.makedirs(dossier_sortie, exist_ok=True)
-                with Image.open(src) as img:
-                    img_rgba = img.convert("RGBA")
-                    try:
-                        from rembg import remove
-                        img_detouree = remove(img_rgba, session=self.session)
-                        try:
-                            image_export = img_detouree.convert("RGBA")
-                            try:
-                                if inverser_masque:
-                                    alpha = image_export.getchannel("A")
-                                    try:
-                                        alpha_inverse = ImageChops.invert(alpha)
-                                        try:
-                                            image_export.putalpha(alpha_inverse)
-                                        finally:
-                                            alpha_inverse.close()
-                                    finally:
-                                        alpha.close()
-
-                                if format_sortie == "ico":
-                                    side = max(image_export.size)
-                                    carre = Image.new(
-                                        "RGBA", (side, side), (0, 0, 0, 0)
-                                    )
-                                    try:
-                                        carre.paste(
-                                            image_export,
-                                            (
-                                                (side - image_export.width) // 2,
-                                                (side - image_export.height) // 2,
-                                            ),
-                                        )
-                                        carre.save(
-                                            dest, format="ICO", sizes=ICON_SIZES
-                                        )
-                                    finally:
-                                        carre.close()
-                                else:
-                                    image_export.save(
-                                        dest, format=format_sortie.upper()
-                                    )
-                            finally:
-                                image_export.close()
-                        finally:
-                            img_detouree.close()
-                    finally:
-                        img_rgba.close()
-                    succes += 1
+                ImageProcessor.process_file(
+                    source_path=src,
+                    session=self.session,
+                    output_format=format_sortie,
+                    invert_mask=inverser_masque,
+                    destination_dir=dossier_destination,
+                )
+                succes += 1
             except Exception:
                 logger.exception("Échec du traitement de l'image %s.", src)
                 echecs += 1
