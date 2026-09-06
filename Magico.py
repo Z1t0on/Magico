@@ -27,7 +27,7 @@ except Exception:
 import threading
 import customtkinter as ctk
 from tkinter import filedialog
-from PIL import Image
+from PIL import Image, ImageChops
 
 # Configuration du thème
 ctk.set_appearance_mode("dark")
@@ -135,6 +135,15 @@ class MagicoApp(ctk.CTk):
         )
         self.format_menu.pack(pady=(0, 8))
 
+        self.inverser_masque_var = ctk.BooleanVar(value=False)
+        self.inverser_masque_switch = ctk.CTkSwitch(
+            self,
+            text="Inverser le masque",
+            variable=self.inverser_masque_var,
+            font=ctk.CTkFont(size=12),
+        )
+        self.inverser_masque_switch.pack(pady=(0, 8))
+
         # Sélection du dossier de destination facultatif
         self.btn_destination = ctk.CTkButton(
             self,
@@ -212,19 +221,19 @@ class MagicoApp(ctk.CTk):
         finally:
             self.after(50, self._traiter_messages_ui)
 
-    def charger_modele(self, modele_souhaite):
-        if self.session is None or self.current_modele != modele_souhaite:
+    def charger_modele(self, model_name):
+        if self.session is None or self.current_modele != model_name:
             self._publier_evenement_ui("chargement_modele")
             try:
                 from rembg import new_session
                 if self.session is not None:
                     self._detruire_session()
-                self.session = new_session(modele_souhaite)
-                self.current_modele = modele_souhaite
+                self.session = new_session(model_name)
+                self.current_modele = model_name
                 self._publier_evenement_ui("modele_pret")
                 return True
             except Exception as e:
-                logger.exception("Impossible de charger le modèle %s.", modele_souhaite)
+                logger.exception("Impossible de charger le modèle %s.", model_name)
                 self._publier_evenement_ui("arret_chargement")
                 self._publier_evenement_ui(
                     "statut",
@@ -237,13 +246,12 @@ class MagicoApp(ctk.CTk):
 
     def _detruire_session(self):
         """Libère explicitement la session ONNX/RemBG et sa mémoire."""
-        session = self.session
-        self.session = None
-        self.current_modele = None
         try:
-            if session is not None:
-                del session
+            if self.session is not None:
+                del self.session
         finally:
+            self.session = None
+            self.current_modele = None
             gc.collect()
 
     def lancer_traitement_thread(self):
@@ -258,15 +266,17 @@ class MagicoApp(ctk.CTk):
 
         logger.info("%d fichier(s) ajouté(s) à la file d'attente.", len(fichiers))
         moteur_selectionne = self.modele_var.get()
-        modele_souhaite = MOTEURS_DETOURAGE[moteur_selectionne]
+        model_name = MOTEURS_DETOURAGE[moteur_selectionne]
         format_sortie = self.format_var.get().lower()
         dossier_destination = self.dossier_destination
+        inverser_masque = bool(self.inverser_masque_var.get())
         logger.info(
             "Traitement sélectionné : moteur=%s ; identifiant=%s ; format=%s ; "
-            "destination=%s.",
+            "inversion_masque=%s ; destination=%s.",
             moteur_selectionne,
-            modele_souhaite,
+            model_name,
             format_sortie.upper(),
+            inverser_masque,
             dossier_destination or "dossier parent de chaque image",
         )
         self.btn_lancer.configure(state="disabled")
@@ -274,23 +284,30 @@ class MagicoApp(ctk.CTk):
             target=self._executer_traitement,
             args=(
                 fichiers,
-                modele_souhaite,
+                model_name,
                 format_sortie,
                 dossier_destination,
+                inverser_masque,
             ),
             daemon=True,
         ).start()
 
     def _executer_traitement(
-        self, fichiers, modele_souhaite, format_sortie, dossier_destination
+        self,
+        fichiers,
+        model_name,
+        format_sortie,
+        dossier_destination,
+        inverser_masque,
     ):
         """Point d'entrée protégé du worker : aucune opération IHM directe."""
         try:
             self.traiter_fichiers(
                 fichiers,
-                modele_souhaite,
+                model_name,
                 format_sortie,
                 dossier_destination,
+                inverser_masque,
             )
         except Exception:
             logger.exception("Erreur non gérée dans le worker de traitement.")
@@ -307,9 +324,14 @@ class MagicoApp(ctk.CTk):
             self._publier_evenement_ui("bouton", etat="normal")
 
     def traiter_fichiers(
-        self, fichiers, modele_souhaite, format_sortie, dossier_destination
+        self,
+        fichiers,
+        model_name,
+        format_sortie,
+        dossier_destination,
+        inverser_masque,
     ):
-        if not fichiers or not self.charger_modele(modele_souhaite):
+        if not fichiers or not self.charger_modele(model_name):
             return
 
         succes = 0
@@ -336,6 +358,17 @@ class MagicoApp(ctk.CTk):
                         try:
                             image_export = img_detouree.convert("RGBA")
                             try:
+                                if inverser_masque:
+                                    alpha = image_export.getchannel("A")
+                                    try:
+                                        alpha_inverse = ImageChops.invert(alpha)
+                                        try:
+                                            image_export.putalpha(alpha_inverse)
+                                        finally:
+                                            alpha_inverse.close()
+                                    finally:
+                                        alpha.close()
+
                                 if format_sortie == "ico":
                                     side = max(image_export.size)
                                     carre = Image.new(
