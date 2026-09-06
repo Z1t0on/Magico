@@ -2,6 +2,7 @@ import os
 import sys
 import ctypes
 import importlib.metadata
+import logging
 
 # Patch pour les métadonnées manquantes dans l'exécutable
 _original_version = importlib.metadata.version
@@ -23,20 +24,27 @@ except Exception:
 
 import threading
 import customtkinter as ctk
+from tkinter import filedialog
 from PIL import Image
 
 # Configuration du thème
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 ICON_SIZES = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
 
 # Obtenir le dossier racine (compatible mode .py et mode .exe PyInstaller)
 if getattr(sys, 'frozen', False):
-    BASE_DIR = sys._MEIPASS
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+logging.basicConfig(
+    filename=os.path.join(BASE_DIR, "magico_debug.log"),
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(threadName)s — %(message)s",
+)
+logger = logging.getLogger("magico")
 
 
 class MagicoApp(ctk.CTk):
@@ -78,7 +86,7 @@ class MagicoApp(ctk.CTk):
         # Bouton principal
         self.btn_lancer = ctk.CTkButton(
             self,
-            text="Sélectionner un dossier",
+            text="Sélectionner des images",
             font=ctk.CTkFont(size=14, weight="bold"),
             height=40,
             width=220,
@@ -148,6 +156,7 @@ class MagicoApp(ctk.CTk):
                 self.status.configure(text="Prêt")
                 return True
             except Exception as e:
+                logger.exception("Impossible de charger le modèle %s.", modele_souhaite)
                 self.stop_loading()
                 self.status.configure(text=f"Erreur : {str(e)}", text_color="#ef4444")
                 self.current_modele = None
@@ -155,52 +164,41 @@ class MagicoApp(ctk.CTk):
         return True
 
     def lancer_traitement_thread(self):
-        dossier_source = ctk.filedialog.askdirectory(
-            title="Choisir le dossier contenant les images"
+        fichiers = filedialog.askopenfilenames(
+            title="Sélectionner une ou plusieurs images",
+            filetypes=[
+                ("Images", "*.png *.jpg *.jpeg *.webp *.bmp"),
+            ],
         )
-        if not dossier_source:
+        if not fichiers:
             return
 
+        logger.info("%d fichier(s) ajouté(s) à la file d'attente.", len(fichiers))
         self.btn_lancer.configure(state="disabled")
         threading.Thread(
-            target=self.traiter_dossier, args=(dossier_source,), daemon=True
+            target=self.traiter_fichiers, args=(fichiers,), daemon=True
         ).start()
 
-    def traiter_dossier(self, dossier_source):
-        fichiers = [
-            f
-            for f in os.listdir(dossier_source)
-            if f.lower().endswith(EXTENSIONS)
-        ]
+    def traiter_fichiers(self, fichiers):
         if not fichiers:
-            self.status.configure(text="Aucune image trouvée dans ce dossier.")
-            self.btn_lancer.configure(state="normal")
             return
 
         if not self.charger_modele():
             self.btn_lancer.configure(state="normal")
             return
 
-        # Récupère le vrai dossier du .exe
-        if getattr(sys, 'frozen', False):
-            dossier_exe = os.path.dirname(sys.executable)
-        else:
-            dossier_exe = os.path.dirname(os.path.abspath(__file__))
-
-        # Dossier de sortie à côté de Magico.exe
+        # Les fichiers .ico sont créés dans le dossier du premier fichier sélectionné.
+        dossier_sortie = os.path.dirname(fichiers[0])
         format_sortie = self.format_var.get().lower()
-        dossier_sortie = os.path.join(dossier_exe, f"Images_{format_sortie}")
-        os.makedirs(dossier_sortie, exist_ok=True)
 
         succes = 0
         echecs = 0
-        for i, f in enumerate(fichiers, 1):
+        for i, src in enumerate(fichiers, 1):
             self.status.configure(
-                text=f"Traitement : {i}/{len(fichiers)} — {f}"
+                text=f"Traitement : {i}/{len(fichiers)} — {os.path.basename(src)}"
             )
 
-            src = os.path.join(dossier_source, f)
-            nom_sans_ext = os.path.splitext(f)[0]
+            nom_sans_ext = os.path.splitext(os.path.basename(src))[0]
             if format_sortie == "ico":
                 dest = os.path.join(dossier_sortie, f"{nom_sans_ext}.ico")
             else:
@@ -227,6 +225,7 @@ class MagicoApp(ctk.CTk):
                         img_detouree.save(dest, format=format_sortie.upper())
                     succes += 1
             except Exception as e:
+                logger.exception("Échec du traitement de l'image %s.", src)
                 echecs += 1
 
         if echecs > 0:
